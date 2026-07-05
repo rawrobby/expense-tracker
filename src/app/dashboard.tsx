@@ -11,16 +11,30 @@ export default function Dashboard({ userEmail }: { userEmail: string }) {
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [budget, setBudget] = useState<number | null>(null);
+  const [budgetInput, setBudgetInput] = useState(""); // For a form to set the budget
   const router = useRouter();
   const supabase = createClient();
-  useEffect(() => {
-    fetch("/api/expenses")
-      .then((res) => res.json())
-      .then((data) => {
-        setExpenses(data);
-        setLoading(false);
-      });
-  }, []);
+useEffect(() => {
+  // Fetch expenses
+  fetch("/api/expenses")
+    .then((res) => res.json())
+    .then((data) => {
+      setExpenses(data);
+      setLoading(false);
+    });
+
+  // Fetch the current month's budget
+  const currentMonth = new Date().toISOString().slice(0, 7);
+  fetch(`/api/budget?month=${currentMonth}`)
+    .then((res) => res.json())
+    .then((data) => {
+      if (data && data.amount) {
+        setBudget(Number(data.amount));
+      }
+    });
+}, []);
   async function addExpense(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -41,6 +55,30 @@ export default function Dashboard({ userEmail }: { userEmail: string }) {
     await fetch(`/api/expenses/${id}`, { method: "DELETE" });
     setExpenses(expenses.filter((e) => e.id !== id));
   }
+  async function updateExpense(e: React.FormEvent) {
+  e.preventDefault();
+  if (!editingExpense) return;
+
+  const res = await fetch(`/api/expenses/${editingExpense.id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      amount: editingExpense.amount,
+      category: editingExpense.category,
+      date: editingExpense.date,
+    }),
+  });
+
+  const updatedData = await res.json();
+
+  if (!res.ok) {
+    setError(updatedData.error || "Failed to update expense");
+    return;
+  }
+
+  setExpenses(expenses.map((item) => (item.id === editingExpense.id ? updatedData : item)));
+  setEditingExpense(null);
+}
   async function logout() {
     await supabase.auth.signOut();
     router.push("/login");
@@ -157,29 +195,83 @@ export default function Dashboard({ userEmail }: { userEmail: string }) {
       ) : (
         <ul className="divide-y rounded-xl border">
           {" "}
-          {expenses.map((e) => (
-            <li key={e.id} className="flex items-center justify-between p-4">
-              {" "}
-              <div>
-                {" "}
-                <p className="font-medium capitalize">{e.category}</p>{" "}
-                <p className="text-sm text-gray-500">{e.date}</p>{" "}
-              </div>{" "}
-              <div className="flex items-center gap-4">
-                {" "}
-                <p className="font-semibold">
-                  ${Number(e.amount).toFixed(2)}
-                </p>{" "}
-                <button
-                  onClick={() => deleteExpense(e.id)}
-                  className="text-sm text-gray-400 hover:text-red-600"
-                >
-                  {" "}
-                  Delete{" "}
-                </button>{" "}
-              </div>{" "}
-            </li>
-          ))}{" "}
+          {expenses.map((e) => {
+            const isEditing = editingExpense?.id === e.id;
+
+            return (
+              <li key={e.id} className="p-4 border-b last:border-0">
+                {isEditing ? (
+                  /* 🛠️ EDITING ROW FORM VIEW */
+                  <form onSubmit={updateExpense} className="flex flex-wrap items-end gap-3 w-full">
+                    <div className="flex-1 min-w-25">
+                      <label className="block text-[10px] uppercase font-bold text-gray-400 mb-0.5">Amount</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={editingExpense.amount}
+                        onChange={(evt) => setEditingExpense({ ...editingExpense, amount: Number(evt.target.value) })}
+                        className="w-full rounded-lg border px-2 py-1 text-sm bg-white text-black"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold text-gray-400 mb-0.5">Category</label>
+                      <select
+                        value={editingExpense.category}
+                        onChange={(evt) => setEditingExpense({ ...editingExpense, category: evt.target.value })}
+                        className="rounded-lg border px-2 py-1 text-sm bg-white text-black"
+                      >
+                        {CATEGORIES.map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase font-bold text-gray-400 mb-0.5">Date</label>
+                      <input
+                        type="date"
+                        value={editingExpense.date}
+                        onChange={(evt) => setEditingExpense({ ...editingExpense, date: evt.target.value })}
+                        className="rounded-lg border px-2 py-1 text-sm bg-white text-black"
+                        required
+                      />
+                    </div>
+                    <div className="flex gap-3 pb-1 h-8.5 items-center">
+                      <button type="submit" className="text-sm font-semibold text-green-700 hover:text-green-800 hover:underline">
+                        Save
+                      </button>
+                      <button type="button" onClick={() => setEditingExpense(null)} className="text-sm text-gray-400 hover:text-gray-600 hover:underline">
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  /* 📝 NORMAL ROW DISPLAY VIEW */
+                  <div className="flex items-center justify-between w-full">
+                    <div>
+                      <p className="font-medium capitalize text-black">{e.category}</p>
+                      <p className="text-sm text-gray-500">{e.date}</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <p className="font-semibold text-black">${Number(e.amount).toFixed(2)}</p>
+                      <button
+                        onClick={() => setEditingExpense(e)}
+                        className="text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => deleteExpense(e.id)}
+                        className="text-sm text-gray-400 hover:text-red-600"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}{" "}
     </main>
