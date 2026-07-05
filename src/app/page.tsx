@@ -1,1 +1,16 @@
-export default function TestPage() { return ( <div style={{ padding: "2rem", fontFamily: "sans-serif" }}> <h1>Database Connection Test</h1> <p><strong>URL loaded:</strong> {process.env.NEXT_PUBLIC_SUPABASE_URL || "? Not Found"}</p> <p><strong>Key loaded:</strong> {process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "? Success (Hidden for safety)" : "? Not Found"}</p> </div> ); }
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import Dashboard from "./dashboard";
+export default function Home() {
+  return HomeAsync();
+}
+async function HomeAsync() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    redirect("/login");
+  }
+  return <Dashboard userEmail={user.email ?? ""} />;
+}
